@@ -1,3 +1,12 @@
 {
-  "model": "openai/glm-4-7-flash"
+  "model": "glm-4-7-flash",
+  "provider": {
+    "openai": {
+      "options": { "baseURL": "https://api.tensormux.com/v1" },
+      "models": {
+        "glm-4-7-flash": { "name": "GLM 4.7 Flash" },
+        "openai/glm-4-7-flash": { "name": "GLM 4.7 Flash (AO)" }
+      }
+    }
+  }
 }
