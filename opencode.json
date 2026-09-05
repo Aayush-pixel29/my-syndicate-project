@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "tensormux/glm-4-7-flash",
+  "provider": {
+    "tensormux": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "TensorMux",
+      "options": {
+        "baseURL": "https://api.tensormux.com/v1"
+      },
+      "models": {
+        "glm-4-7-flash": { "name": "GLM 4.7 Flash" },
+        "tensormux/glm-4-7-flash": { "name": "GLM 4.7 Flash (AO)" }
+      }
+    }
+  }
+}
