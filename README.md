@@ -1,349 +1,301 @@
-# Syndicate Core Engine
+# SkillFoundry
 
-Syndicate Track 1: Minimal working slice of SkillFoundry core engine. Small functional core executing tasks through tools and producing structured trajectory for evaluation without frontend, PostgreSQL, authentication, payments, Docker, or microservices.
+> **Agents that learn the tools, not just the task.**
 
-## Overview
+SkillFoundry is a trajectory-based agent-learning system for tool-using agents.
 
-This module implements the core engine for Syndicate, providing:
+Instead of simply remembering past conversations, SkillFoundry learns from **execution experience**:
 
-- **Core Models**: Task, Tool, ToolResult, ToolCall data structures
-- **GitHub Simulator**: Deterministic GitHub CI/CD simulator with failure scenarios
-- **Agent Executor**: Task planning and execution with LLM integration (placeholder)
-- **Trajectory Recorder**: Structured trajectory persistence (memory/SQLite)
-- **Trajectory Evaluator**: Deterministic evaluation of task completions
+**FAIL → UNDERSTAND → LEARN → REPLAY → MEASURE → PROMOTE**
+
+---
+
+## What SkillFoundry Does
+
+Given a task, available tools, and an evaluator, SkillFoundry:
+
+1. Executes the task.
+2. Records the complete execution trajectory.
+3. Evaluates the result.
+4. Analyzes what failed and why.
+5. Synthesizes a reusable skill from the evidence.
+6. Replays that skill on a fresh trajectory.
+7. Measures the improvement.
+8. Promotes the skill only when it passes the promotion gate.
+
+---
 
 ## Architecture
 
-### Core Components
+```text
+                           SKILLFOUNDRY
+                                │
+                                ▼
+                              GOAL
+                                │
+                                ▼
+                              AGENT
+                                │
+                                ▼
+                              TOOLS
+                                │
+                                ▼
+                           TRAJECTORY
+                                │
+                                ▼
+                           EVALUATOR
+                                │
+                                ▼
+                       FAILURE ANALYZER
+                                │
+                                ▼
+                       SKILL SYNTHESIZER
+                                │
+                                ▼
+                             SKILL
+                                │
+                                ▼
+                            REPLAY
+                                │
+                                ▼
+                         PROMOTION GATE
+                                │
+                                ▼
+                         VERIFIED SKILL
+                                │
+                                ▼
+                        BETTER NEXT RUN
+The learning loop
+Run 1
+  ↓
+Failure
+  ↓
+Failure Analysis
+  ↓
+Skill Synthesis
+  ↓
+Learned Procedure + Parameters
+  ↓
+Fresh Replay
+  ↓
+Evaluation
+  ↓
+Promotion / Rejection
+Why This Is Different
 
-```
+A conventional agent memory system mostly stores:
+
+"What happened before?"
+
+SkillFoundry stores:
+
+"What failed?"
+"Why did it fail?"
+"What tool-use procedure should change?"
+"Which parameters can be recovered from evidence?"
+"Did the change actually improve the next run?"
+
+A skill is therefore evidence-backed and replay-validated, rather than simply generated and remembered.
+
+Benchmark
+
+The repository includes a deterministic GitHub CI investigation benchmark:
+
+demos/github_ci_learning_demo.py
+
+The benchmark demonstrates a complete learning cycle.
+
+Run 1 — Baseline
+
+The agent investigates a failed CI run using:
+
+list_workflow_runs
+→ inspect_job_logs
+→ inspect_commit
+
+The final commit inspection fails because the baseline contains an invalid commit SHA.
+
+Baseline score: 0.6250
+Tool calls:      3
+Failure type:    tool_failure
+Learning
+
+SkillFoundry analyzes the recorded trajectory.
+
+It learns the reusable procedure:
+
+list_workflow_runs
+→ inspect_job_logs
+→ inspect_commit
+
+It also extracts actionable parameters from successful evidence in the same trajectory:
+
+inspect_job_logs.run_id  = 2
+inspect_job_logs.job_name = test
+inspect_commit.sha       = def456ghi789
+
+The learned information retains provenance back to the source trajectory.
+
+Run 2 — Replay
+
+The synthesized skill is replayed on a new trajectory using the learned procedure and parameters.
+
+Replay score:     1.0000
+Tool calls:       3
+
+The measurable improvement is:
+
+0.6250  →  1.0000
+
+Score delta:     +0.3750
+Tool-call delta:  0
+Promotion
+
+The Promotion Gate accepts the skill only when:
+
+Replay score > Baseline score
+AND
+Replay tool calls <= Baseline tool calls
+
+For the benchmark:
+
+Improved:   True
+Promoted:   True
+
+This means the skill improved quality without increasing tool usage.
+
+Technical Components
+Core Execution Layer
 src/syndicate/core/
-├── models/           # Data models
-│   ├── task.py       # Task, TaskStatus, ToolInputSchema
-│   ├── tool.py       # Tool abstraction
-│   └── __init__.py
-├── simulator/        # GitHub simulator
-│   └── github_simulator.py  # GithubSimulator with CI scenarios
-├── executor/         # Task execution
-│   └── agent_executor.py    # AgentExecutor with LLM integration
-├── recorder/         # Trajectory persistence
-│   └── trajectory_recorder.py  # TrajectoryRecorder
-└── evaluator/        # Evaluation logic
-    └── trajectory_evaluator.py  # TrajectoryEvaluator
-```
-
-### Design Decisions
-
-- **LLM Provider**: TensorMux GLM-4.7-Flash (placeholder-only in ModelInterface)
-- **Storage**: JSON/JSONL or SQLite (no PostgreSQL required)
-- **Architecture**: Isolated model integration, dataclasses/typed models preferred
-- **Scope**: Core task model + tool abstraction + deterministic GitHub simulator + agent executor + trajectory recorder + basic evaluator
-- **Exclusions**: Skill synthesis, long-term memory, promotion gate, second domain, web UI
-
-## Quick Start
-
-### Installation
-
-No installation required. This is a pure Python module.
-
-```bash
-# Clone the repository
-git clone https://github.com/Aayush-pixel29/my-syndicate-project.git
-cd my-syndicate-project
-
-# Navigate to core engine
-cd src/syndicate/core
-```
-
-### Running Tests
-
-```bash
-cd tests
-python run_tests.py
-```
-
-Expected output:
-```
-.......
-----------------------------------------------------------------------
-Ran X tests in Ys
-
-OK
-```
-
-### Demo: Complete Workflow
-
-```python
-from datetime import datetime
-from syndicate.core.executor.agent_executor import ModelInterface, AgentExecutor
-from syndicate.core.recorder.trajectory_recorder import TrajectoryRecorder, generate_trajectory_id
-from syndicate.core.evaluator.trajectory_evaluator import TrajectoryEvaluator
-from syndicate.core.models.task import Task, TaskStatus, ToolInputSchema, ToolCall, ToolResult
-from syndicate.core.models.tool import Tool
-from syndicate.core.simulator.github_simulator import GithubSimulator, GithubTool
-
-# Step 1: Create a mock GitHub tool
-simulator = GithubSimulator()
-simulator.initialize()
-github_tool = GithubTool(simulator)
-
-# Step 2: Set up executor
-model = ModelInterface()
-executor = AgentExecutor(model=model)
-executor.register_tool("github", github_tool)
-
-# Step 3: Create a task
-task = Task(
-    task_id="demo-1",
-    description="List GitHub workflow runs for repocli/test-ci",
-    available_tool_names=["github"],
-    success_criteria="Should return list of workflow runs"
-)
-
-# Step 4: Execute the task
-result = executor.execute_task(task)
-
-# Step 5: Record trajectory
-recorder = TrajectoryRecorder()
-trajectory_id = generate_trajectory_id()
-recorder.record_trajectory_initialization(
-    task_id=task.task_id,
-    description=task.description,
-    available_tools=task.available_tool_names,
-    success_criteria=task.success_criteria,
-    trajectory_id=trajectory_id
-)
-for tool_call in result.execution_history:
-    recorder.record_tool_call(trajectory_id, tool_call)
-    recorder.record_tool_result(trajectory_id, tool_call.result)
-recorder.record_final_answer(trajectory_id, result.final_answer)
-
-# Step 6: Evaluate the trajectory
-evaluator = TrajectoryEvaluator()
-evaluation = evaluator.evaluate(trajectory_id, recorder)
-
-# Print results
-print(f"Status: {result.status.value}")
-print(f"Final Answer: {result.final_answer}")
-print(f"Evaluation: {evaluation}")
-```
-
-## Core Modules
-
-### Core Models (`models/`)
-
-#### Task Model
-```python
-from syndicate.core.models.task import Task, TaskStatus
-
-task = Task(
-    task_id="task-1",
-    description="Test task",
-    available_tool_names=["tool1"],
-    success_criteria="Task must succeed"
-)
-
-print(task.status)  # TaskStatus.PENDING
-task.status = TaskStatus.COMPLETED
-```
-
-#### Tool Model
-```python
-from syndicate.core.models.task import ToolInputSchema
-from syndicate.core.models.tool import Tool
-
-class MyTool(Tool):
-    @property
-    def name(self) -> str:
-        return "my_tool"
-
-    @property
-    def description(self) -> str:
-        return "My tool description."
-
-    @property
-    def input_schema(self) -> ToolInputSchema:
-        return ToolInputSchema(
-            type="object",
-            description="Tool input schema",
-            required=["param"],
-            properties={
-                "param": {
-                    "type": "string",
-                    "description": "Parameter"
-                }
-            }
-        )
-
-    def execute(self, input_data: dict) -> dict:
-        return {"success": True, "output": input_data["param"]}
-
-tool = MyTool()
-result = tool.execute({"param": "value"})
-```
-
-### GitHub Simulator (`simulator/github_simulator.py`)
-
-Deterministic GitHub CI/CD simulator with 7 tools:
-
-- `list_workflow_runs`: List workflow runs for a repo/branch
-- `inspect_workflow_run`: Get details of a specific workflow run
-- `inspect_job_logs`: Get job logs for a workflow run/job
-- `inspect_commit`: Get commit details
-- `inspect_pull_request`: Get PR details
-- `inspect_issue`: Get issue details
-- `search_repository`: Search commits/PRs/issues
-
-**CI Failure Scenarios**:
-- `repocli/test-ci`: Simulates CI failures for workflow runs
-- `repocli/integration-test`: Simulates integration test failures
-
-```python
-from syndicate.core.simulator.github_simulator import GithubSimulator, GithubTool
-
-simulator = GithubSimulator()
-simulator.initialize()
-
-tool = GithubTool(simulator)
-
-# List workflow runs
-result = tool.execute({
-    "operation": "list_workflow_runs",
-    "repo": "repocli/test-ci",
-    "branch": "main"
-})
-print(result["data"])
-
-# Inspect a specific run
-result = tool.execute({
-    "operation": "inspect_workflow_run",
-    "repo": "repocli/test-ci",
-    "run_id": "123"
-})
-print(result["data"])
-```
-
-### Agent Executor (`executor/agent_executor.py`)
-
-Handles task planning, tool selection, and execution.
-
-```python
-from syndicate.core.executor.agent_executor import ModelInterface, AgentExecutor
-
-model = ModelInterface()
-executor = AgentExecutor(model=model)
-executor.register_tool("github", github_tool)
 
-task = Task(
-    task_id="my-task",
-    description="List workflow runs",
-    available_tool_names=["github"],
-    success_criteria="Should return list of runs"
-)
+Contains:
+
+Task and tool models
+Agent Executor
+Deterministic GitHub Simulator
+Trajectory Recorder
+Trajectory Evaluator
+Learning Layer
+src/syndicate/learning/
+
+Contains:
 
-result = executor.execute_task(task)
-print(result.status)
-print(result.final_answer)
-```
+failure_analyzer.py
+skill.py
+skill_synthesizer.py
+replay_engine.py
+promotion_gate.py
+learning_loop.py
+
+Together these implement:
+
+trajectory
+→ failure analysis
+→ skill synthesis
+→ replay
+→ measurable comparison
+→ promotion
+AO / OpenCode / TensorMux
+
+AO is used as the agent orchestration environment.
+
+The project is configured to use:
+
+AO
+ ↓
+OpenCode
+ ↓
+TensorMux
+ ↓
+GLM-4.7-Flash
+
+The deterministic benchmark remains offline and reproducible so that the learning result can be independently verified.
+
+Reliability
+
+The repository currently contains:
+
+113 passing tests
+0 failing tests
+
+Run the test suite:
+
+python -m pytest -q
+
+Run the benchmark:
+
+python demos/github_ci_learning_demo.py
+Repository Structure
+my-syndicate-project/
+│
+├── README.md
+├── opencode.json
+├── pytest.ini
+│
+├── demos/
+│   └── github_ci_learning_demo.py
+│
+├── docs/
+│   └── CORE_ENGINE.md
+│
+├── src/
+│   └── syndicate/
+│       ├── core/
+│       │   ├── models/
+│       │   ├── simulator/
+│       │   ├── executor/
+│       │   ├── recorder/
+│       │   └── evaluator/
+│       │
+│       └── learning/
+│           ├── failure_analyzer.py
+│           ├── skill.py
+│           ├── skill_synthesizer.py
+│           ├── replay_engine.py
+│           ├── promotion_gate.py
+│           └── learning_loop.py
+│
+└── tests/
+Design Principles
+Evidence over memory
+
+Skills are derived from real execution trajectories.
+
+Replay over assumption
+
+A generated skill must be tested on a fresh run.
+
+Promotion over optimism
+
+A skill is promoted only when measurable evidence shows improvement.
 
-### Trajectory Recorder (`recorder/trajectory_recorder.py`)
+Determinism over demo magic
 
-Records task execution trajectories for persistence and evaluation.
+The benchmark uses a deterministic simulator and avoids hidden fallbacks.
 
-```python
-from syndicate.core.recorder.trajectory_recorder import TrajectoryRecorder, generate_trajectory_id
+Minimal architecture
 
-recorder = TrajectoryRecorder()
-trajectory_id = generate_trajectory_id()
+The project focuses on the agent-learning loop instead of unrelated infrastructure.
 
-# Record initialization
-recorder.record_trajectory_initialization(
-    task_id="task-1",
-    description="Test",
-    available_tools=["tool1"],
-    success_criteria="Success",
-    trajectory_id=trajectory_id
-)
+Track 1
 
-# Record tool calls and results
-recorder.record_tool_call(trajectory_id, tool_call)
-recorder.record_tool_result(trajectory_id, tool_result)
+SkillFoundry targets Automated Agent Engineering by focusing on:
 
-# Record final answer
-recorder.record_final_answer(trajectory_id, "Done")
+tool-use learning
+execution trajectories
+failure analysis
+reusable skills
+replay
+measurable improvement
+promotion gates
+AO-based agent orchestration
+The Core Insight
 
-# Retrieve trajectory
-trajectory = recorder.get_trajectory(trajectory_id)
-print(trajectory)
-```
+Agents should learn how to use the environment, not just remember the conversation.
 
-### Trajectory Evaluator (`evaluator/trajectory_evaluator.py`)
+SkillFoundry turns an execution failure into a testable skill and then asks the only question that matters:
 
-Evaluates task completions based on completeness, correctness, efficiency, and reliability.
-
-```python
-from syndicate.core.evaluator.trajectory_evaluator import TrajectoryEvaluator
-
-evaluator = TrajectoryEvaluator()
-evaluation = evaluator.evaluate(trajectory_id, recorder)
-
-print(f"Score: {evaluation['overall_score']}")
-print(f"Category: {evaluation['category']}")
-print(f"Details: {evaluation['details']}")
-```
-
-## Testing
-
-All tests cover:
-
-- **Models**: Task, Tool, ToolResult, ToolCall
-- **Simulator**: GithubSimulator, GithubTool (7 tools, CI scenarios)
-- **Executor**: ModelInterface, AgentExecutor (plan, execute, final answer)
-- **Recorder**: TrajectoryRecorder (record, retrieve, clear)
-- **Evaluator**: TrajectoryEvaluator (complete, failed, incomplete trajectories)
-
-Run all tests:
-```bash
-cd tests
-python run_tests.py
-```
-
-Run specific test file:
-```bash
-python -m unittest tests.test_models
-python -m unittest tests.test_simulator
-python -m unittest tests.test_executor
-python -m unittest tests.test_recorder
-python -m unittest tests.test_evaluator
-```
-
-## Design Compromises
-
-1. **LLM Placeholder**: ModelInterface is a placeholder for TensorMux GLM-4.7-Flash integration. Current implementation uses deterministic parsing/generation placeholders.
-
-2. **Storage Flexibility**: TrajectoryRecorder supports memory and SQLite storage. SQLite not yet implemented.
-
-3. **Deterministic Simulator**: GitHub simulator is a minimal deterministic dataset, not a real GitHub API integration.
-
-4. **No Skill Synthesis**: Skill aggregation, composition, and synthesis are excluded from this slice.
-
-5. **No Long-term Memory**: Memory features and persistence beyond single trajectories are excluded.
-
-6. **No Promotion Gate**: Promotion gate functionality is excluded.
-
-7. **No Second Domain**: Domain-specific features and rules are excluded.
-
-8. **No Web UI**: Frontend UI components are excluded.
-
-## Next Steps
-
-1. Integrate actual TensorMux GLM-4.7-Flash provider
-2. Implement SQLite persistence for trajectories
-3. Add more CI scenarios and failure patterns
-4. Enhance evaluation criteria
-5. Add error handling and retry logic
-6. Implement logging and observability
-
-## License
+Did the next run actually get better?
+License
 
 This project is part of the Syndicate Track 1 implementation for SkillFoundry.
