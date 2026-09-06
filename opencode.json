@@ -1,11 +1,18 @@
 {
-  "model": "glm-4-7-flash",
+  "$schema": "https://opencode.ai/config.json",
+  "model": "tensormux/glm-4-7-flash",
   "provider": {
-    "openai": {
-      "options": { "baseURL": "https://api.tensormux.com/v1" },
+    "tensormux": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "TensorMux",
+      "options": {
+        "baseURL": "https://api.tensormux.com/v1",
+        "apiKey": "{env:TENSORMUX_API_KEY}"
+      },
       "models": {
-        "glm-4-7-flash": { "name": "GLM 4.7 Flash" },
-        "openai/glm-4-7-flash": { "name": "GLM 4.7 Flash (AO)" }
+        "glm-4-7-flash": {
+          "name": "GLM 4.7 Flash"
+        }
       }
     }
   }
